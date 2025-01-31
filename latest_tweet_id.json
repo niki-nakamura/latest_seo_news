@@ -1,7 +1,3 @@
-const data = fs.readFileSync(LATEST_ID_FILE, 'utf8');
-if (!data.trim()) {
-  // 空だったら旧IDは存在しないとみなす
-  return null;
+{
+  "latest_id": ""
 }
-const json = JSON.parse(data);
-...
