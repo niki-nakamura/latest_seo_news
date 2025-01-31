@@ -15,7 +15,7 @@ const LATEST_ID_FILE = './latest_tweet_id.json';
 // Google Search Central (公式) アカウントのユーザーID
 // たとえば「@GoogleSearchC」に対してユーザーIDを取得しておく
 // APIで https://api.twitter.com/2/users/by/username/GoogleSearchC を呼び出すなどしてIDを調べる
-const GOOGLE_SEARCH_CENTRAL_USER_ID = '1234567890';
+const GOOGLE_SEARCH_CENTRAL_USER_ID = '22046611';
 
 // Twitter API (v2) でユーザーのツイートを取得するエンドポイント
 // 例: https://api.twitter.com/2/users/:id/tweets
