@@ -117,6 +117,19 @@ async function fetchLatestTweet() {
     }
   });
 
+  // レート制限エラーの場合、x-rate-limit-reset ヘッダーから再試行までの待機時間を取得
+  if (res.status === 429) {
+    const resetTime = res.headers.get("x-rate-limit-reset");
+    const now = Math.floor(Date.now() / 1000);
+    const waitSeconds = resetTime ? resetTime - now : 60; // ヘッダーがない場合は60秒待機
+
+    console.error(`Rate limit exceeded. Waiting for ${waitSeconds} seconds before retrying.`);
+    await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
+
+    // 待機後に再度リクエストを試みる
+    return fetchLatestTweet();
+  }
+
   if (!res.ok) {
     throw new Error(`Twitter API error: ${res.status} ${res.statusText}`);
   }
