@@ -12,11 +12,11 @@ const TARGET_USER_ID = '22046611';
 // 前回取得した最新ツイートIDを記録するファイル
 const LATEST_ID_FILE = './latest_tweet_id.json';
 
-/** (A) Block Kit形式メッセージを作る（Slackの自動プレビューを利用） */
+/** (A) Block Kit形式メッセージを作る（Slackのプレビューを利用） */
 function createSlackBlockMessage(tweet) {
   const tweetUrl = `https://x.com/googlesearchc/status/${tweet.id}`;
   return {
-    text: tweetUrl,
+    text: tweetUrl, // ここにURLを直接入れることでSlack上でプレビューが出る
     unfurl_links: true,
     unfurl_media: true,
     blocks: [
@@ -81,6 +81,7 @@ function saveLatestTweetIdToFile(tweetId) {
     fs.writeFileSync(LATEST_ID_FILE, JSON.stringify({ latest_id: tweetId }), 'utf8');
     console.log(`Wrote latest tweet ID to ${LATEST_ID_FILE}: ${tweetId}`);
 
+    // GitHub Actions上でコミットするための設定
     execSync('git config user.name "github-actions[bot]"');
     execSync('git config user.email "github-actions[bot]@users.noreply.github.com"');
 
@@ -94,10 +95,8 @@ function saveLatestTweetIdToFile(tweetId) {
   }
 }
 
-/** (E) Twitter APIで最新ツイートを取得（429時は最大3回リトライ） */
-async function fetchLatestTweet(retryCount = 0) {
-  const MAX_RETRIES = 3;
-
+/** (E) Twitter APIで最新ツイートを取得（429なら即終了） */
+async function fetchLatestTweet() {
   const url = `https://api.twitter.com/2/users/${TARGET_USER_ID}/tweets`
             + `?max_results=5`
             + `&tweet.fields=created_at,text`
@@ -108,34 +107,27 @@ async function fetchLatestTweet(retryCount = 0) {
     headers: { 'Authorization': `Bearer ${TWITTER_BEARER_TOKEN}` }
   });
 
-  // レートリミットに当たった場合の処理
+  // レートリミットに当たったら今回の実行はあきらめる
   if (res.status === 429) {
-    if (retryCount >= MAX_RETRIES) {
-      console.error(`Rate limit exceeded and retried ${MAX_RETRIES} times. Aborting.`);
-      return null; // 諦める
-    }
-    // x-rate-limit-reset から待ち時間を算出
-    const resetTime = res.headers.get("x-rate-limit-reset");
-    const now = Math.floor(Date.now() / 1000);
-    const waitSeconds = resetTime ? (resetTime - now) : 60; // 取得できないときはデフォルト60秒
-    console.error(`Rate limit exceeded. Waiting for ${waitSeconds} seconds before retrying.`);
-    await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
-    return fetchLatestTweet(retryCount + 1);  // 再帰的に再試行
+    console.error("Rate limit exceeded. Aborting this run immediately.");
+    return null;
   }
 
+  // その他のエラーは例外にする
   if (!res.ok) {
     throw new Error(`Twitter API error: ${res.status} ${res.statusText}`);
   }
 
+  // 正常応答をパース
   const data = await res.json();
   if (!data || !data.data || data.data.length === 0) {
-    return null;
+    return null; // ツイートが無い
   }
 
   // 最新ツイート（配列先頭）
   const tweetObj = data.data[0];
-  let mediaUrl = null;
 
+  let mediaUrl = null;
   if (data.includes && data.includes.media && data.includes.media.length > 0) {
     const firstMedia = data.includes.media[0];
     mediaUrl = firstMedia.url || firstMedia.preview_image_url || null;
@@ -155,11 +147,13 @@ async function fetchLatestTweet(retryCount = 0) {
     const prevLatestId = getLatestTweetIdFromFile();
     const latestTweet = await fetchLatestTweet();
 
+    // ツイートが取得できなかった場合（null）は終了
     if (!latestTweet) {
-      console.log('No tweets found for the user.');
+      console.log('No new tweet found or rate-limited. Exiting.');
       return;
     }
 
+    // 最新ツイートIDが前回と異なればSlack通知＆ID更新
     if (latestTweet.id !== prevLatestId) {
       console.log('New tweet found! Sending to Slack...');
       await postToSlack(latestTweet);
